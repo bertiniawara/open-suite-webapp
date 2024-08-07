@@ -11,7 +11,8 @@ pipeline {
         stage('Change Directory') {
             steps {
                 dir('open-suite-webapp') {
-                    sh 'cd open-suite-webapp/modules/axelor-open-suite'
+                    sh 'cd open-suite-webapp'
+                    sh 'cd modules/axelor-open-suite'
                     sh 'git submodule init'
                     sh 'git submodule update --depth=1'
                     sh 'cd ../..'
