@@ -15,7 +15,7 @@ services:
   db:
     image: postgres:12
     environment:
-      - POSTGRES_DB=greatness
+      - POSTGRES_DB=axelor-open-suite
       - POSTGRES_USER=axelor
       - POSTGRES_PASSWORD=password
     volumes:
