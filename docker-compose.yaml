@@ -1,7 +1,7 @@
 version: '3.3'
 services:
   app:
-    image: betiniawara842/kapsiki-axelor:${env.BUILD_NUMBER}
+    image: betiniawara842/kapsiki-axelor
     ports:
       - "8080:8080"
     depends_on:
