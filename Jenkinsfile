@@ -1,61 +1,63 @@
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    DOCKER_IMAGE_NAME = "betiniawara842/kapsiki-axelor"
-    DOCKER_IMAGE_TAG = "${env.BUILD_NUMBER}"
-  }
-
-  stages {
-    stage('Git Clone') {
-      steps {
-        git branch: 'main', url: 'https://github.com/bertiniawara/open-suite-webapp.git'
-      }
+    parameters {
+        string(name: 'IMAGE_TAG', defaultValue: 'latest', description: 'Docker image tag to deploy')
+        string(name: 'IMAGE_NAME', defaultValue: 'kapsiki/kapsiki-erp', description: 'Docker image name to deploy')
+        string(name: 'REMOTE_MACHINE_USER', defaultValue: 'root', description: 'Remote machine user')
+        string(name: 'REMOTE_MACHINE_NAME', defaultValue: '212.132.115.76', description: 'Remote machine IP address')
+        string(name: 'DOCKER_HUB_USERNAME', defaultValue: 'ghislain.kouete@kouete.com', description: 'Docker Hub username')
     }
 
-    stage('Build') {
-      steps {
-        sh './gradlew clean build -x test'
-      }
-    }
 
-    stage('Build Docker Image') {
-      steps {
-        script {
-          def dockerImage = docker.build("${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}", "--no-cache -f Dockerfile .")
-          withCredentials([string(credentialsId: 'DOCKER_HUB_PASSWORD', variable: 'DOCKER_HUB_PASSWORD')]) {
-            sh 'docker login -u betiniawara@gmail.com -p $DOCKER_HUB_PASSWORD'
-            dockerImage.push() 
+    stages {
+        stage('GIT CLONE') {
+            steps {
+                git branch: 'devops-58', url: 'https://github.com/kapsiki/kapsiki-axelor-open-suite-webapp-8.0.8.git'
             }
-          }
-      }
-    }
-     stage('Update Docker Compose') {
-        steps{
-            script {
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    withCredentials([usernamePassword(credentialsId: 'GIT_HUB_CREDENTIALS')]) {
-                        sh "git config user.email betiniawara@gmail.com"
-                        sh "git config user.name bertiniawara"
-            
-                        sh "cat docker-compose.yaml"
-                        sh "sed -i 's+${DOCKER_IMAGE_NAME}:.*+${DOCKER_IMAGE_NAME}:${DOCKERTAG}+g' docker-compose.yaml"
-                        sh "cat docker-compose.yaml"
-                        sh "git add ."
-                        sh "git commit -m 'Update Docker Compose file with new image tag:${DOCKER_IMAGE_TAG}'"
-                        sh "git push origin HEAD:main"
+        }
+
+        stage('GRADLE BUILD') {
+            steps {
+                sh './gradlew clean build -x test --warning-mode=none'
+            }
+        }
+
+        stage('BUILD AND PUSH DOCKER IMAGE') {
+            steps {
+                script {
+                    withCredentials([string(credentialsId: 'DOCKER_HUB_PASSWORD', variable: 'DOCKER_HUB_PASSWORD')])  {
+                        sh "echo $DOCKER_HUB_PASSWORD | docker login -u ${params.DOCKER_HUB_USERNAME} --password-stdin"
+                        docker.build("${params.IMAGE_NAME}:${params.IMAGE_TAG}", "--pull --no-cache -f Dockerfile .")
+                        sh "docker push ${params.IMAGE_NAME}:${params.IMAGE_TAG}"
                     }
                 }
-              }
             }
-          }
-    stage('Deploy') {
-      steps {
-        script {
-          sh "docker-compose down -v"
-          sh "docker-compose up -d"
         }
-      }
+
+        stage('UPDATE AND DEPLOY TO DEMO-SERVER') {
+            steps {
+                script {
+                    def buildTag = "${params.IMAGE_TAG}"
+                    def remoteMachineUser = "${params.REMOTE_MACHINE_USER}"
+                    def remoteMachineName = "${params.REMOTE_MACHINE_NAME}"
+                    def TEMP_DIR = "working-dir"
+
+                    sh """
+                        ssh ${remoteMachineUser}@${remoteMachineName} "mkdir -p ~/${TEMP_DIR}"
+                        scp docker-compose.yaml ${remoteMachineUser}@${remoteMachineName}:~/${TEMP_DIR}/
+
+                        ssh  ${remoteMachineUser}@${remoteMachineName} << EOF
+                        cd ~/${TEMP_DIR}
+                        sed -i 's#image: .*#image: ${params.IMAGE_NAME}:${buildTag}#' docker-compose.yaml
+                        echo -e "Deploying erp app publish script to ${params.REMOTE_MACHINE_NAME} remotely from jenkins build server"
+                        docker-compose -f docker-compose.yaml down -v
+                        docker-compose -f docker-compose.yaml up -d
+                        rm -rf ~/${TEMP_DIR}
+                    
+                    """
+                }
+            }
+        }
     }
-  }
 }
